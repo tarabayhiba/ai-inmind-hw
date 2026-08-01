@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from torchvision.datasets import CIFAR10
 
-# Real CIFAR-10 per-channel mean/std (train.py's placeholder Normalize((0.5,)*3, ...)
+# Real CIFAR-10 per-channel mean/std
 CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
 CIFAR10_STD = (0.2470, 0.2435, 0.2616)
 
