@@ -14,5 +14,11 @@ authors = [
   {name = "Hiba Tarabay", email = "tarabayhiba05@gmail.com"},
 ]
 maintainers = [
-  {name = "Hiba Tarabay", email = "tarabayhiba05@gmail.com"}
+  {name = "Hiba Tarabay", email = "tarabayhiba05@gmail.com"},
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "torch>=2.7.1",
 ]
