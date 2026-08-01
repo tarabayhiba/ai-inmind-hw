@@ -9,3 +9,10 @@ dependencies = [
     "torchvision>=0.22.1",
     "tqdm>=4.67.1",
 ]
+
+authors = [
+  {name = "Hiba Tarabay", email = "tarabayhiba05@gmail.com"},
+]
+maintainers = [
+  {name = "Hiba Tarabay", email = "tarabayhiba05@gmail.com"}
+]
