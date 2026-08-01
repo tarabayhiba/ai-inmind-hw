@@ -2,3 +2,5 @@ __pycache__/
 data/
 weights/
 *.pyc
+.venv/
+.pytest_cache/
