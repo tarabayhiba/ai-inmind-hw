@@ -3,11 +3,37 @@ hyperparameters:
   batch_size: 8
 
   lr: 0.001
-  momentum: 0.9 
+  momentum: 0.9
 
   num_workers: 8
+
+
+lejepa:
+  views: 4
+  lambda: 0.05
+  num_slices: 1024  # M random 1-D projection directions for SIGReg, RESAMPLED every step (not fixed)
+  embedding_dim: 512   # backbone (encoder) raw output dim, pre-projector
+  proj_dim: 64  # SEPARATE small projector-head output dim that SIGReg/prediction loss operates on
+
+  pretrain:
+    epochs: 100
+    batch_size: 128
+    lr: 0.0005       # picked smaller of the two tested values bc no budget for a real LR search
+    weight_decay: 0.0005   # reference implementation's GOTO hyperparameters (README.md) specify 5e-4 for ResNet backbones
+    num_workers: 8
+    warmup_epochs: 1     # paper + MINIMAL.md both use linear warmup -> cosine annealing LR decay((weight decay itself stays const unscheduled)
+
+  finetune:
+    # pretrained encoder; treat as a starting point to be validated/adjusted
+    epochs: 30
+    batch_size: 128
+    lr: 0.0005
+    weight_decay: 0.0001
+    num_workers: 8
 
 paths:
   train_dir: 'data/cifar10/train'
   test_dir: 'data/cifar10/test'
   model_path: 'weights/checkpoint.pth'
+  lejepa_encoder_path: 'weights/lejepa_encoder.pth'
+  lejepa_finetuned_path: 'weights/lejepa_finetuned.pth'
