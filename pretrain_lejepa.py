@@ -1,6 +1,5 @@
 """LeJEPA self-supervised pretraining on CIFAR-10 (train split only)
-Wires up model.py's CIFARResNetEncoder, lejepa_data.py's multi-view loader,
-and lejepa_loss.py's LeJEPALoss into a training loop driven entirely by config.yaml's. 
+wires up model.py's CIFARResNetEncoder, lejepa_data.py's multi-view loader,& lejepa_loss.py's LeJEPALoss into a training loop 
 No labels are used at this stage (later extended for fine-tuning) for the supervised path
 """
 import math
