@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 from lejepa_data import CIFAR10_MEAN, CIFAR10_STD
 from model import CIFARResNetEncoder, LeJEPAClassifier
+from pretrain_lejepa import build_scheduler
 
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -82,22 +83,23 @@ def evaluate(model, dataloader, criterion, device):
     return total_loss / total, 100 * correct / total
 
 
-def save_resume_checkpoint(resume_path, epoch, model, optimizer, best_val_acc):
+def save_resume_checkpoint(resume_path, epoch, model, optimizer, scheduler, best_val_acc):
     os.makedirs(os.path.dirname(resume_path), exist_ok=True)
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
         'best_val_acc': best_val_acc,
     }, resume_path)
 
 
-def finetune(model, dataloader_train, dataloader_val, criterion, optimizer, device, epochs,
+def finetune(model, dataloader_train, dataloader_val, criterion, optimizer, scheduler, device, epochs,
               checkpoint_path, resume_path, start_epoch=0, best_val_acc=-1.0):
     """Trains for `epochs`, saving a checkpoint each time val accuracy
     improves (best-by-val-accuracy, not just the final epoch), plus a
-    mid-run resume checkpoint (model+optimizer+epoch+best_val_acc) after
-    every epoch so a killed/hung run can pick back up."""
+    mid-run resume checkpoint (model+optimizer+scheduler+epoch+best_val_acc)
+    after every epoch so a killed/hung run can pick back up."""
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     for epoch in range(start_epoch, epochs):
         model.train()
@@ -115,19 +117,23 @@ def finetune(model, dataloader_train, dataloader_val, criterion, optimizer, devi
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
                 running_loss += loss.item()
                 progress_bar.set_postfix({'loss': running_loss / (i + 1)})
 
         avg_train_loss = running_loss / len(dataloader_train)
         val_loss, val_acc = evaluate(model, dataloader_val, criterion, device)
-        print(f"Epoch {epoch+1} finished. Train loss: {avg_train_loss:.3f} | Val loss: {val_loss:.3f} | Val acc: {val_acc:.2f}%")
+        print(
+            f"Epoch {epoch+1} finished. Train loss: {avg_train_loss:.3f} | Val loss: {val_loss:.3f} | "
+            f"Val acc: {val_acc:.2f}% | LR: {scheduler.get_last_lr()[0]:.6f}"
+        )
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(model.state_dict(), checkpoint_path)
             print(f"New best val acc {val_acc:.2f}% -- checkpoint saved to {checkpoint_path}")
 
-        save_resume_checkpoint(resume_path, epoch, model, optimizer, best_val_acc)
+        save_resume_checkpoint(resume_path, epoch, model, optimizer, scheduler, best_val_acc)
         print(f"Resume checkpoint saved to {resume_path} (epoch {epoch+1})")
 
     print(f'Finished fine-tuning. Best val acc: {best_val_acc:.2f}%')
@@ -154,11 +160,17 @@ def main():
 
     model = LeJEPAClassifier(encoder, num_classes=10).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=finetune_cfg['label_smoothing'])
     optimizer = optim.AdamW(
         model.parameters(),
         lr=finetune_cfg['lr'],
         weight_decay=finetune_cfg['weight_decay'],
+    )
+    scheduler = build_scheduler(
+        optimizer,
+        steps_per_epoch=len(dataloader_train),
+        epochs=finetune_cfg['epochs'],
+        warmup_epochs=finetune_cfg['warmup_epochs'],
     )
 
     resume_path = config['paths']['lejepa_finetune_resume_path']
@@ -168,11 +180,12 @@ def main():
         checkpoint = torch.load(resume_path, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         best_val_acc = checkpoint['best_val_acc']
         start_epoch = checkpoint['epoch'] + 1
         print(f"Resumed from {resume_path} at epoch {start_epoch + 1} (best val acc so far: {best_val_acc:.2f}%)")
 
-    finetune(model, dataloader_train, dataloader_val, criterion, optimizer, device, finetune_cfg['epochs'],
+    finetune(model, dataloader_train, dataloader_val, criterion, optimizer, scheduler, device, finetune_cfg['epochs'],
              checkpoint_path, resume_path, start_epoch, best_val_acc)
 
     # Reload the best-val-acc checkpoint (not necessarily the last epoch) for the final test number
