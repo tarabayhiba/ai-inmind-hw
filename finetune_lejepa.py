@@ -53,7 +53,12 @@ def get_loaders(finetune_cfg):
     dataset_train = Subset(full_train_aug, train_indices)
     dataset_val = Subset(full_train_eval, val_indices)
 
-    loader_kwargs = dict(batch_size=finetune_cfg['batch_size'], num_workers=finetune_cfg['num_workers'])
+    num_workers = finetune_cfg['num_workers']
+    loader_kwargs = dict(
+        batch_size=finetune_cfg['batch_size'],
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,  # avoid respawning all workers every epoch
+    )
     dataloader_train = DataLoader(dataset_train, shuffle=True, **loader_kwargs)
     dataloader_val = DataLoader(dataset_val, shuffle=False, **loader_kwargs)
     dataloader_test = DataLoader(dataset_test, shuffle=False, **loader_kwargs)
@@ -77,12 +82,24 @@ def evaluate(model, dataloader, criterion, device):
     return total_loss / total, 100 * correct / total
 
 
-def finetune(model, dataloader_train, dataloader_val, criterion, optimizer, device, epochs, checkpoint_path):
+def save_resume_checkpoint(resume_path, epoch, model, optimizer, best_val_acc):
+    os.makedirs(os.path.dirname(resume_path), exist_ok=True)
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'best_val_acc': best_val_acc,
+    }, resume_path)
+
+
+def finetune(model, dataloader_train, dataloader_val, criterion, optimizer, device, epochs,
+              checkpoint_path, resume_path, start_epoch=0, best_val_acc=-1.0):
     """Trains for `epochs`, saving a checkpoint each time val accuracy
-    improves (best-by-val-accuracy, not just the final epoch)"""
+    improves (best-by-val-accuracy, not just the final epoch), plus a
+    mid-run resume checkpoint (model+optimizer+epoch+best_val_acc) after
+    every epoch so a killed/hung run can pick back up."""
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-    best_val_acc = -1.0
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         model.train()
         running_loss = 0.0
         with tqdm(
@@ -109,6 +126,9 @@ def finetune(model, dataloader_train, dataloader_val, criterion, optimizer, devi
             best_val_acc = val_acc
             torch.save(model.state_dict(), checkpoint_path)
             print(f"New best val acc {val_acc:.2f}% -- checkpoint saved to {checkpoint_path}")
+
+        save_resume_checkpoint(resume_path, epoch, model, optimizer, best_val_acc)
+        print(f"Resume checkpoint saved to {resume_path} (epoch {epoch+1})")
 
     print(f'Finished fine-tuning. Best val acc: {best_val_acc:.2f}%')
     return best_val_acc
@@ -141,7 +161,19 @@ def main():
         weight_decay=finetune_cfg['weight_decay'],
     )
 
-    finetune(model, dataloader_train, dataloader_val, criterion, optimizer, device, finetune_cfg['epochs'], checkpoint_path)
+    resume_path = config['paths']['lejepa_finetune_resume_path']
+    start_epoch = 0
+    best_val_acc = -1.0
+    if os.path.exists(resume_path):
+        checkpoint = torch.load(resume_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        best_val_acc = checkpoint['best_val_acc']
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"Resumed from {resume_path} at epoch {start_epoch + 1} (best val acc so far: {best_val_acc:.2f}%)")
+
+    finetune(model, dataloader_train, dataloader_val, criterion, optimizer, device, finetune_cfg['epochs'],
+             checkpoint_path, resume_path, start_epoch, best_val_acc)
 
     # Reload the best-val-acc checkpoint (not necessarily the last epoch) for the final test number
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))

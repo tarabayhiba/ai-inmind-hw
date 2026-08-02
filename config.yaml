@@ -28,3 +28,4 @@ paths:
   lejepa_encoder_path: 'weights/lejepa_encoder.pth'
   lejepa_pretrain_resume_path: 'weights/lejepa_pretrain_resume.pth'  # mid-run resumable checkpoint (model+optimizer+scheduler+epoch)
   lejepa_finetuned_path: 'weights/lejepa_finetuned.pth'
+  lejepa_finetune_resume_path: 'weights/lejepa_finetune_resume.pth'  # mid-run resumable checkpoint (model+optimizer+epoch+best_val_acc)
