@@ -64,7 +64,7 @@ def get_pretrain_loader(config):
         batch_size=lejepa_cfg['pretrain']['batch_size'],
         shuffle=True,
         num_workers=num_workers,
-        persistent_workers=num_workers > 0,  # avoid respawning all workers every epoch (Windows spawn deadlock)
+        persistent_workers=num_workers > 0,  # avoid respawning all workers every epoch
         drop_last=True,  # SIGReg's batch statistics are noisier on a ragged last batch
     )
     return loader
