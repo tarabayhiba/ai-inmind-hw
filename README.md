@@ -1,8 +1,6 @@
 # InMindCNN
 
-CIFAR-10 image classification in PyTorch: a LeJEPA self-supervised
-pretraining + fine-tuning pipeline, sharing `config.yaml`, `data/`, and
-`weights/` across both stages.
+CIFAR-10 image classification in PyTorch: a LeJEPA self-supervised pretraining + fine-tuning pipeline, sharing `config.yaml`, `data/`, and `weights/` across both stages.
 
 ## Repo structure
 
@@ -14,14 +12,23 @@ pretraining + fine-tuning pipeline, sharing `config.yaml`, `data/`, and
 ├── lejepa_loss.py                    # LeJEPALoss = jepa_prediction_loss + SIGReg
 ├── pretrain_lejepa.py                # stage 1 entry point: self-supervised pretraining loop
 ├── finetune_lejepa.py                # stage 2 entry point: supervised fine-tuning + test eval
+├── evaluate_lejepa.py                # standalone test-set eval of a fine-tuned checkpoint + confusion matrix
 ├── run_lejepa_pipeline.sh            # runs pretrain_lejepa.py -> finetune_lejepa.py back-to-back
 ├── tests/
 │   ├── test_lejepa_data.py
 │   └── test_lejepa_loss.py
-├── lejepa.pdf                        # reference paper PDF (local reference material)
 ├── data/                             # CIFAR-10, auto-downloaded on first run (gitignored)
-└── weights/                          # checkpoints written by pretrain/finetune (gitignored)
+└── weights/                          # checkpoints written by pretrain/finetune/evaluate (gitignored)
+    ├── lejepa_encoder.pth                # final SSL-pretrained encoder (stage 1 output)
+    ├── lejepa_pretrain_resume.pth        # mid-run resumable checkpoint for pretraining
+    ├── lejepa_finetuned.pth              # best-by-val-accuracy classifier checkpoint (stage 2 output)
+    └── lejepa_finetune_resume.pth        # mid-run resumable checkpoint for fine-tuning
 ```
+
+## Dataset
+
+[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html): 60,000 32x32x3 RGB images (32x32 pixels, 3 color channels) across 10 classes (`airplane`, `automobile`, `bird`, `cat`, `deer`,`dog`, `frog`, `horse`, `ship`, `truck`), 6,000 images per class where 50,000 for training, 10,000 for test. Auto-downloaded into `data/` on first run.
+LeJEPA pretraining uses the train split only (labels discarded); fine-tuning uses the train split (with a held-out `val_split` for validation) and evaluates once on the test split.
 
 ## Quickstart
 
@@ -80,6 +87,15 @@ under the `lejepa:` block in `config.yaml`.
    Stops on the first failure so a broken pretrain run doesn't silently
    feed a fine-tuning stage.
 
+4. **Evaluate a fine-tuned checkpoint on the test set:**
+   ```bash
+   uv run evaluate_lejepa.py
+   ```
+   - Loads `weights/lejepa_finetuned.pth` and runs a single pass over
+     the CIFAR-10 test split, without re-running fine-tuning.
+   - Prints test loss/accuracy, eval throughput, and a per-class
+     confusion matrix.
+
 ### Architecture
 
 ```mermaid
@@ -120,6 +136,46 @@ Run the test suite with:
 ```bash
 uv run pytest
 ``` 
+
+## Results
+
+Pretraining and finetuning of the model was run on: NVIDIA GeForce RTX 4070 Laptop GPU (8 GB)
+
+All runs below: `pretrain.epochs: 100`, `pretrain.batch_size: 128`, `finetune.epochs: 30`, `finetune.batch_size: 128`.
+
+### main — before cosine LR + label smoothing
+
+Batch pre-training runtime for 100 epochs:
+![alt text](docs/images/image-1.png)
+
+Batch finetuning runtime for 30 epochs:
+![alt text](docs/images/image-2.png)
+
+Output of `uv run evaluate_lejepa.py` on the fine-tuned checkpoint:
+![alt text](docs/images/image.png)
+
+### main — after cosine LR + label smoothing
+
+Batch finetuning runtime for 30 epochs:
+![alt text](docs/images/finetune_improved.png)
+
+Output of `uv run evaluate_lejepa.py` on the fine-tuned checkpoint:
+![alt text](docs/images/eval_improved.png)
+
+### gray-area-fix
+
+Batch finetuning runtime for 30 epochs:
+![alt text](docs/images/gray-area-fix-fine.png)
+
+Output of `uv run evaluate_lejepa.py` on the fine-tuned checkpoint:
+![alt text](docs/images/gray-area-eval.png)
+
+### Alternatives considered
+
+Explored on the `gray-area-fix` branch, not merged into `main`:
+
+- **Excluding finetune's validation images from SSL pretraining.** Pretraining originally trained on CIFAR-10's full train split, so the encoder had already seen the pixels of the images finetuning later held out as validation (never their labels, but still not a clean holdout) — a gray area in how "unseen" that validation split really was. The fix added a single deterministic split (`get_train_val_indices` in `lejepa_data.py`) shared by both stages, so pretraining only sees `train_indices` and finetuning's validation set is a genuine holdout end-to-end. Measured impact was under 1% accuracy change and no meaningful difference in pretraining runtime, so it wasn't worth the extra split-sharing complexity and stayed off `main`.
+- **Label smoothing + cosine LR schedule for fine-tuning**, tried on the same branch, also produced a similarly small accuracy change. Unlike the split fix, this one was still merged into `main` since it's low-cost, standard regularization with no real downside even without a big win.
 
 ### References
 
