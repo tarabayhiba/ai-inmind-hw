@@ -21,6 +21,8 @@ lejepa:
     lr: 0.0005
     weight_decay: 0.0001
     num_workers: 8
+    warmup_epochs: 1  # same linear warmup -> cosine decay shape as pretrain, scaled to 30 epochs
+    label_smoothing: 0.1
 
 paths:
   train_dir: 'data/cifar10/train'
