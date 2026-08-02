@@ -67,7 +67,7 @@ def main():
     finetune_cfg = lejepa_cfg['finetune']
     checkpoint_path = config['paths']['lejepa_finetuned_path']
 
-    _, _, dataloader_test = get_loaders(finetune_cfg)
+    _, _, dataloader_test = get_loaders(lejepa_cfg, finetune_cfg)
     test_dataset = dataloader_test.dataset
 
     encoder = CIFARResNetEncoder(

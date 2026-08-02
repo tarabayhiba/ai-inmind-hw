@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from tqdm import tqdm
 
-from lejepa_data import CIFAR10_MEAN, CIFAR10_STD
+from lejepa_data import CIFAR10_MEAN, CIFAR10_STD, get_train_val_indices
 from model import CIFARResNetEncoder, LeJEPAClassifier
 
 with open('config.yaml', 'r') as f:
@@ -32,9 +32,11 @@ eval_transform = transforms.Compose([
 ])
 
 
-def get_loaders(finetune_cfg):
-    """ Builds Subsets of two separately-transformed CIFAR10 instances over an identical index split, 
-    val stays free of train's crop/flip augmentation."""
+def get_loaders(lejepa_cfg, finetune_cfg):
+    """ Builds Subsets of two separately-transformed CIFAR10 instances over an identical index split,
+    val stays free of train's crop/flip augmentation. Uses the same shared
+    split as pretrain (lejepa_data.get_train_val_indices) so val_indices here
+    are exactly the images pretraining excluded -- a genuinely unseen holdout."""
     train_dir = config['paths']['train_dir']
     test_dir = config['paths']['test_dir']
     os.makedirs(train_dir, exist_ok=True)
@@ -44,11 +46,7 @@ def get_loaders(finetune_cfg):
     full_train_eval = datasets.CIFAR10(root=train_dir, train=True, download=True, transform=eval_transform)
     dataset_test = datasets.CIFAR10(root=test_dir, train=False, download=True, transform=eval_transform)
 
-    val_split = finetune_cfg.get('val_split', 0.1)
-    n_total = len(full_train_aug)
-    n_val = int(n_total * val_split)
-    indices = torch.randperm(n_total, generator=torch.Generator().manual_seed(42)).tolist()
-    val_indices, train_indices = indices[:n_val], indices[n_val:]
+    train_indices, val_indices = get_train_val_indices(len(full_train_aug), lejepa_cfg['val_split'])
 
     dataset_train = Subset(full_train_aug, train_indices)
     dataset_val = Subset(full_train_eval, val_indices)
@@ -142,7 +140,7 @@ def main():
     finetune_cfg = lejepa_cfg['finetune']
     checkpoint_path = config['paths']['lejepa_finetuned_path']
 
-    dataloader_train, dataloader_val, dataloader_test = get_loaders(finetune_cfg)
+    dataloader_train, dataloader_val, dataloader_test = get_loaders(lejepa_cfg, finetune_cfg)
 
     encoder = CIFARResNetEncoder(
         embedding_dim=lejepa_cfg['embedding_dim'],

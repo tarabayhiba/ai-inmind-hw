@@ -50,14 +50,29 @@ class MultiViewCIFAR10(Dataset):
         return torch.stack(views)  # (V, C, H, W)
 
 
+def get_train_val_indices(n_total, val_split, seed=42):
+    """Deterministic train/val partition shared by pretrain and finetune, so
+    SSL pretraining excludes the exact images finetuning later holds out as
+    validation (otherwise the encoder has already seen those pixels
+    unsupervised, biasing val accuracy optimistic)."""
+    indices = torch.randperm(n_total, generator=torch.Generator().manual_seed(seed)).tolist()
+    n_val = int(n_total * val_split)
+    return indices[n_val:], indices[:n_val]  # train_indices, val_indices
+
+
 def get_pretrain_loader(config):
     """Builds the multi-view unlabeled DataLoader
     Batches come out as (N, V, C, H, W) / collate_fn is
     the default (torch.stack over the dataset's (V,C,H,W) items), then we
     just rearrange the resulting (N,V,C,H,W) tensor to feed the encoder.
+
+    Excludes the images finetune's val split will use, so that split stays a
+    genuinely unseen holdout w.r.t. the pretrained encoder too.
     """
     lejepa_cfg = config['lejepa']
     dataset = MultiViewCIFAR10(root=config['paths']['train_dir'], views=lejepa_cfg['views'])
+    train_indices, _ = get_train_val_indices(len(dataset), lejepa_cfg['val_split'])
+    dataset = torch.utils.data.Subset(dataset, train_indices)
     num_workers = lejepa_cfg['pretrain']['num_workers']
     loader = torch.utils.data.DataLoader(
         dataset,
